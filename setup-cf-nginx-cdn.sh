@@ -2,21 +2,30 @@
 #========================================
 # Cloudflare + Nginx HTTPS 安全 CDN 一键配置脚本
 # Author: auto-generated
-# Usage: sudo ./setup-cf-nginx-cdn.sh
+# Usage:
+#   非交互模式（curl 一键）:
+#     curl -fsSL https://raw.githubusercontent.com/deedeenoone/cf-nginx-cdn-setup/main/setup-cf-nginx-cdn.sh | sudo bash -s -- \
+#       --domain api.example.com \
+#       --port 13579 \
+#       --zone-id xxxxx \
+#       --token xxxxx
+#
+#   交互模式:
+#     sudo ./setup-cf-nginx-cdn.sh
 #========================================
 
 set -e
 
-#---------- 配置变量 ----------
-DOMAIN=""           # 你的域名 (例如 api.example.com)
-SERVICE_PORT=""      # 内部服务端口 (例如 13579)
-CF_ZONE_ID=""        # Cloudflare Zone ID
-CF_API_TOKEN=""      # Cloudflare API Token
+#---------- 默认值 ----------
+DOMAIN=""
+SERVICE_PORT=""
+CF_ZONE_ID=""
+CF_API_TOKEN=""
 ORIGIN_CERT="/etc/ssl/certs/cloudflare-origin.pem"
 ORIGIN_KEY="/etc/ssl/private/cloudflare-origin.key"
 #------------------------------
 
-# 颜色输出
+#---------- 颜色输出 ----------
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -26,10 +35,35 @@ info()    { echo -e "${GREEN}[INFO]${NC} $1"; }
 warn()    { echo -e "${YELLOW}[WARN]${NC} $1"; }
 error()   { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
-# 检查 root
+#---------- 命令行参数解析 ----------
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --domain)
+            DOMAIN="$2"
+            shift 2
+            ;;
+        --port)
+            SERVICE_PORT="$2"
+            shift 2
+            ;;
+        --zone-id)
+            CF_ZONE_ID="$2"
+            shift 2
+            ;;
+        --token)
+            CF_API_TOKEN="$2"
+            shift 2
+            ;;
+        *)
+            error "未知参数: $1"
+            ;;
+    esac
+done
+
+#---------- 检查 root ----------
 [ "$EUID" -ne 0 ] && error "请使用 root 或 sudo 运行"
 
-# 检查参数
+#---------- 检查参数（缺少则交互输入） ----------
 [ -z "$DOMAIN" ] && read -p "请输入你的域名 (如 api.example.com): " DOMAIN
 [ -z "$SERVICE_PORT" ] && read -p "请输入内部服务端口 (如 13579): " SERVICE_PORT
 [ -z "$CF_ZONE_ID" ] && read -p "请输入 Cloudflare Zone ID: " CF_ZONE_ID
@@ -40,24 +74,23 @@ info "开始配置..."
 #========================================
 # 1. 安装依赖
 #========================================
-info "安装 nginx certbot..."
+info "安装 nginx certbot curl ufw..."
 apt-get update -qq
-apt-get install -y -qq nginx curl
+DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nginx curl ufw openssl
+
+info "依赖安装完成"
 
 #========================================
-# 2. 下载 Cloudflare Origin CA 根证书
+# 2. 生成 Origin SSL 证书
 #========================================
-info "下载 Cloudflare Origin CA 证书..."
+info "生成 Cloudflare Origin SSL 证书..."
+
 mkdir -p /etc/ssl/certs /etc/ssl/private
 
-curl -sL https://developers.cloudflare.com/ssl/static/origin_ca_ecc_root.pem \
-  -o /etc/ssl/certs/cloudflare-origin.pem
-
-# 生成自签名证书（用于 Origin SSL，Cloudflare 会信任它）
 openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
   -keyout "$ORIGIN_KEY" \
   -out /etc/ssl/certs/cloudflare-origin.pem \
-  -subj "/CN=$DOMAIN/O=Cloudflare-Origin"
+  -subj "/CN=$DOMAIN/O=Cloudflare-Origin" 2>/dev/null
 
 info "证书生成完成"
 
@@ -95,14 +128,11 @@ info "配置 Nginx..."
 NGINX_CONF="/etc/nginx/sites-available/${DOMAIN}"
 NGINX_ENABLED="/etc/nginx/sites-enabled/${DOMAIN}"
 
-# 提取子域名（去掉主域名部分）
-SUBDOMAIN=$(echo "$DOMAIN" | cut -d'.' -f1)
-
-cat > "$NGINX_CONF" << EOF
+cat > "$NGINX_CONF" << 'EOF'
 server {
     listen 80;
     server_name ${DOMAIN};
-    return 301 https://\$host\$request_uri;
+    return 301 https://$host$request_uri;
 }
 
 server {
@@ -137,10 +167,10 @@ server {
         proxy_pass http://127.0.0.1:${SERVICE_PORT};
         proxy_http_version 1.1;
 
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
 
         proxy_connect_timeout 30s;
         proxy_send_timeout 60s;
@@ -151,10 +181,11 @@ server {
 }
 EOF
 
+# 替换占位符
+sed -i "s/\${DOMAIN}/$DOMAIN/g; s/\${SERVICE_PORT}/$SERVICE_PORT/g" "$NGINX_CONF"
+
 # 启用站点
 ln -sf "$NGINX_CONF" "$NGINX_ENABLED"
-
-# 禁用默认站点
 [ -f /etc/nginx/sites-enabled/default ] && rm -f /etc/nginx/sites-enabled/default
 
 # 测试并重载
@@ -163,7 +194,7 @@ nginx -t && systemctl reload nginx
 info "Nginx 配置完成"
 
 #========================================
-# 5. 只允许 Cloudflare IP 访问 443
+# 5. 配置防火墙（仅允许 Cloudflare IP 访问）
 #========================================
 info "配置防火墙（仅允许 Cloudflare IP 访问 443）..."
 
@@ -180,24 +211,17 @@ CF_IPS=(
     "104.16.0.0/13"
     "104.24.0.0/14"
     "162.158.0.0/15"
-    "172.64.0.0/13"
     "198.41.128.0/17"
 )
 
-# ufw 规则
 ufw --force enable
 ufw default deny incoming
-
-# 允许 SSH
 ufw allow 22/tcp comment 'SSH'
-
-# 允许 Cloudflare 全部 IP 通过 443
-for ip in "${CF_IPS[@]}"; do
-    ufw allow from $ip to any port 443 proto tcp comment "Cloudflare" 2>/dev/null
-done
-
-# 允许 HTTP
 ufw allow 80/tcp comment 'HTTP'
+
+for ip in "${CF_IPS[@]}"; do
+    ufw allow from $ip to any port 443 proto tcp comment "Cloudflare" 2>/dev/null || true
+done
 
 ufw reload
 
@@ -208,7 +232,6 @@ info "防火墙配置完成"
 #========================================
 info "阻止直接 IP 访问 443..."
 
-# 创建默认 server 块拒绝无 Host 的请求
 cat > /etc/nginx/sites-available/block-default \
 << 'EOF'
 server {

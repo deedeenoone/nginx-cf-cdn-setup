@@ -4,7 +4,7 @@
 
 ## 功能
 
-- 自动申请 Cloudflare Origin SSL 证书
+- 自动生成 Cloudflare Origin SSL 证书
 - 自动添加 DNS 记录（Proxied 模式）
 - Nginx 反向代理 + 安全头配置
 - 防火墙仅允许 Cloudflare IP 访问（防扫描）
@@ -17,37 +17,35 @@
 - 服务器公网 IP 可访问
 - Ubuntu/Debian 系统
 
-## 使用方法
+## 一键安装（curl）
 
 ```bash
-# 1. 下载脚本
-git clone https://github.com/deedeenoone/cf-nginx-cdn-setup.git
-cd cf-nginx-cdn-setup
+curl -fsSL https://raw.githubusercontent.com/deedeenoone/cf-nginx-cdn-setup/main/setup-cf-nginx-cdn.sh | sudo bash -s -- \
+  --domain api.example.com \
+  --port 13579 \
+  --zone-id 你的ZoneID \
+  --token 你的APIToken
+```
 
-# 2. 编辑配置（脚本内）
-nano setup-cf-nginx-cdn.sh
-# 修改以下变量：
-#   DOMAIN="api.example.com"
-#   SERVICE_PORT="13579"
-#   CF_ZONE_ID="your-zone-id"
-#   CF_API_TOKEN="your-api-token"
-
-# 3. 运行
-chmod +x setup-cf-nginx-cdn.sh
-sudo ./setup-cf-nginx-cdn.sh
+**示例：**
+```bash
+curl -fsSL https://raw.githubusercontent.com/deedeenoone/cf-nginx-cdn-setup/main/setup-cf-nginx-cdn.sh | sudo bash -s -- \
+  --domain api.mydomain.com \
+  --port 13579 \
+  --zone-id abc123def456 \
+  --token eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
 
 ## 交互模式
 
-如果脚本内未填写配置，运行时会提示输入：
+如果不想传参，可以直接运行脚本，按提示输入：
 
 ```bash
+git clone https://github.com/deedeenoone/cf-nginx-cdn-setup.git
+cd cf-nginx-cdn-setup
+chmod +x setup-cf-nginx-cdn.sh
 sudo ./setup-cf-nginx-cdn.sh
-# 依次输入：
-#   域名 (如 api.example.com)
-#   内部服务端口 (如 13579)
-#   Cloudflare Zone ID
-#   Cloudflare API Token
+# 依次输入：域名、服务端口、Zone ID、API Token
 ```
 
 ## 架构
