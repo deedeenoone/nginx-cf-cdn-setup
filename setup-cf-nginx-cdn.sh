@@ -78,16 +78,30 @@ uninstall_domain() {
     [ -f "$NGINX_CONF" ] && rm -f "$NGINX_CONF" && info "已删除 Nginx 配置: $NGINX_CONF"
     [ -L "$NGINX_ENABLED" ] && rm -f "$NGINX_ENABLED" && info "已禁用站点: $NGINX_ENABLED"
 
-    # 删除证书
+    # ========== acme.sh 清理 ==========
+    if [ -d "$HOME/.acme.sh/${DOMAIN}" ] || [ -f "$HOME/.acme.sh/${DOMAIN}.conf" ]; then
+        # 停止该域名的自动续期 cron 任务
+        crontab -l 2>/dev/null | grep -v "acme.sh.*--renew.*${DOMAIN}" | crontab - 2>/dev/null || true
+        # 移除 acme.sh 证书记录（会清理 cron + 配置）
+        "$HOME/.acme.sh/acme.sh" --remove -d "$DOMAIN" 2>/dev/null || true
+        # 彻底删除该域名目录
+        [ -d "$HOME/.acme.sh/${DOMAIN}" ] && rm -rf "$HOME/.acme.sh/${DOMAIN}"
+        info "已清理 acme.sh 续期任务和证书"
+    fi
+
+    # 清理 acme.sh 存储的 Cloudflare API Token（如果该域名是唯一使用它的）
+    if [ -f "$HOME/.acme.sh/account.conf" ]; then
+        # 检查是否还有其他域名使用 CF DNS
+        remaining_cf=$(ls "$HOME/.acme.sh/" 2>/dev/null | grep -c '.conf$' || true)
+        if [ "$remaining_cf" -le 1 ]; then
+            sed -i '/CF_Token/d' "$HOME/.acme.sh/account.conf" 2>/dev/null || true
+            info "已清理 acme.sh Cloudflare API Token"
+        fi
+    fi
+
+    # ========== 停止 Nginx 并清理证书 ==========
     [ -f "/etc/ssl/certs/${DOMAIN}.pem" ] && rm -f "/etc/ssl/certs/${DOMAIN}.pem" && info "已删除证书"
     [ -f "/etc/ssl/private/${DOMAIN}.key" ] && rm -f "/etc/ssl/private/${DOMAIN}.key" && info "已删除私钥"
-
-    # 尝试从 acme.sh 移除（如果存在）
-    if [ -d "$HOME/.acme.sh/${DOMAIN}" ]; then
-        "$HOME/.acme.sh/acme.sh" --remove -d "$DOMAIN" 2>/dev/null || true
-        [ -d "$HOME/.acme.sh/${DOMAIN}" ] && rm -rf "$HOME/.acme.sh/${DOMAIN}"
-        info "已移除 acme.sh 证书"
-    fi
 
     systemctl reload nginx
     info "${DOMAIN} 卸载完成"
