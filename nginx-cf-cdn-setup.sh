@@ -9,6 +9,7 @@ PORT=""
 ZONE_ID=""
 CF_TOKEN=""
 CA="letsencrypt"
+WEBSOCKET=0
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -17,6 +18,7 @@ while [[ $# -gt 0 ]]; do
         --zone-id) ZONE_ID="$2"; shift 2 ;;
         --token) CF_TOKEN="$2"; shift 2 ;;
         --server) CA="$2"; shift 2 ;;
+        --websocket) WEBSOCKET=1; shift ;;
         *) echo "Unknown: $1"; exit 1 ;;
     esac
 done
@@ -43,6 +45,15 @@ if systemctl is-active --quiet nginx 2>/dev/null || pgrep nginx > /dev/null 2>&1
 else
     echo "[INFO] Starting nginx..."
     systemctl start nginx || true
+fi
+
+# WebSocket headers
+WS_HEADERS=""
+if [ "$WEBSOCKET" = "1" ]; then
+    echo "[INFO] WebSocket support enabled"
+    WS_HEADERS='
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";'
 fi
 
 echo "[INFO] Getting certificate..."
@@ -128,7 +139,7 @@ server {
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Proto \$scheme;$WS_HEADERS
         proxy_connect_timeout 30s;
         proxy_send_timeout 60s;
         proxy_read_timeout 60s;
