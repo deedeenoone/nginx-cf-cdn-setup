@@ -35,12 +35,14 @@ curl https://get.acme.sh | sh -s email=root@localhost.com > /dev/null 2>&1
 
 echo "[INFO] Getting certificate..."
 export CF_Token="$CF_TOKEN"
-~/.acme.sh/acme.sh --set-default-ca --server "$CA" > /dev/null 2>&1
-~/.acme.sh/acme.sh --issue --dns dns_cf -d "$DOMAIN" --server "$CA" > /dev/null 2>&1
+~/.acme.sh/acme.sh --set-default-ca --server "$CA" || { echo "[ERROR] Failed to set CA"; exit 1; }
+echo "[INFO] Issuing certificate..."
+~/.acme.sh/acme.sh --issue --dns dns_cf -d "$DOMAIN" --server "$CA" || { echo "[ERROR] Certificate issue failed"; exit 1; }
+echo "[INFO] Installing certificate..."
 ~/.acme.sh/acme.sh --install-cert -d "$DOMAIN" \
     --key-file /etc/ssl/private/"$DOMAIN".key \
     --cert-file /etc/ssl/certs/"$DOMAIN".pem \
-    --reloadcmd "systemctl reload nginx" > /dev/null 2>&1
+    --reloadcmd "systemctl reload nginx" || { echo "[ERROR] Certificate install failed"; exit 1; }
 
 chmod 600 /etc/ssl/private/"$DOMAIN".key 2>/dev/null || true
 chmod 644 /etc/ssl/certs/"$DOMAIN".pem 2>/dev/null || true
