@@ -60,12 +60,17 @@ echo "[INFO] Getting certificate..."
 export CF_Token="$CF_TOKEN"
 ~/.acme.sh/acme.sh --set-default-ca --server "$CA" || { echo "[ERROR] Failed to set CA"; exit 1; }
 
-# Check if certificate is already issued
-if [ -f "$HOME/.acme.sh/$DOMAIN/fullchain.cer" ]; then
+# Check if certificate is already issued (check multiple possible locations)
+CERT_ISSUED=false
+if [ -f "$HOME/.acme.sh/$DOMAIN/fullchain.cer" ] || [ -f "$HOME/.acme.sh/$DOMAIN/$DOMAIN.cer" ]; then
+    CERT_ISSUED=true
+fi
+
+if [ "$CERT_ISSUED" = true ]; then
     echo "[INFO] Certificate already issued, skipping..."
 else
     echo "[INFO] Issuing certificate..."
-    ~/.acme.sh/acme.sh --issue --dns dns_cf -d "$DOMAIN" --server "$CA" --force || { echo "[ERROR] Certificate issue failed"; exit 1; }
+    ~/.acme.sh/acme.sh --issue --dns dns_cf -d "$DOMAIN" --server "$CA" || { echo "[ERROR] Certificate issue failed"; exit 1; }
 fi
 
 # Check if certificate is already installed
