@@ -73,6 +73,8 @@ Check renewal status:
 
 ## Uninstall
 
+### Uninstall Single Domain
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/deedeenoone/nginx-cf-cdn-setup/main/nginx-cf-cdn-setup.sh | sudo bash -s -- \
   --uninstall --domain api.example.com
@@ -83,6 +85,45 @@ This removes:
 2. SSL certificates and keys
 3. acme.sh certificate records
 4. Reloads Nginx
+
+### Full Manual Uninstall
+
+```bash
+# Stop Nginx
+systemctl stop nginx
+
+# Remove all site configs
+rm -f /etc/nginx/sites-available/*
+rm -f /etc/nginx/sites-enabled/*
+
+# Remove all certificates
+rm -f /etc/ssl/certs/*.pem
+rm -f /etc/ssl/private/*.key
+
+# Remove acme.sh
+rm -rf ~/.acme.sh
+
+# Reload
+systemctl reload nginx
+```
+
+### Reset Firewall
+
+```bash
+# Disable ufw
+ufw disable
+
+# Or reset rules
+ufw reset
+ufw default deny incoming
+ufw allow 22/tcp
+ufw allow 80/tcp
+ufw allow 443/tcp
+```
+
+### Clean Cloudflare DNS Records
+
+Manually log into [dash.cloudflare.com](https://dash.cloudflare.com) → your domain → DNS → delete the A record.
 
 ## Security Features
 
